@@ -193,7 +193,14 @@ A single-paragraph summary and a placeholder for the high-level diagram.
 
 > _Note:_ The daemon and the CLI are chosen to be stateless. This means the Agent does not keep any kind of state (like SQLite with the statuses, or what service is enabled or not) but it loads any state information for the services by the existence of the _service unit_, _timer unit_, the _service-script_ file in target directory, and the systemd service statuses. This architectural choice is made to keep **single source of truth** on the Agent system for its services, preventing inconsistencies between the kept state and the real state of the system.
 
-**Tech choices:** The SSI Agent will be implemented in Python. This will allow entry level developers and Linux power users to easily understand source code and possible contribute to the project.
+**Tech choices:** The SSI Agent will be implemented in Python using popular packages:
+
+- `websockets`: Live communication with the Backend. Also for a simple local server _(For testing purposes and later could be used as on premises option)_
+- `watchdog`: Efficient _(event-based)_ monitoring of the log files.
+- `click`: Clean, scalable, and feature rich CLI tooling.
+- `pytest`: Testing.
+
+_These will allow entry level developers and Linux power users to easily understand source code and possible contribute to the project._
 
 **Packaging & distribution:**
 _Decision pending. Potential options include native packages (`.deb`, `.rpm`) and `pypi` packages._
@@ -202,17 +209,27 @@ _Decision pending. Potential options include native packages (`.deb`, `.rpm`) an
 
 ## 3.3 Backend (Server / API / Database)
 
-**Responsibility:** Central coordinator and storage. Authenticate users and agents, accept incoming data from Agents, persist state, and serve API to Clients.
+**Responsibility:** Being the central coordinator and storage. Authenticate users and agents, accept incoming data from Agents, persist state, and serve API to Clients.
 
 **MVP responsibilities:**
 
-- User authentication + account management
-- Agent registration and authentication
-- Ingesting service script results and heartbeats
-- Storing minimal state (last-seen, last-status, last-message)
-- Serving API endpoints for the Client to display data
+- Basic user authentication (username/password)
+- Basic Agent authentication (API key)
+- Storing **services** state (last-seen, last-status, last-message)
+- Serving **services** REST API.
 
-**Tech choices (examples):** FastAPI or Django REST (Python), or a Node.js/Express backend. PostgreSQL for persistent storage; Redis optional for queues/short-term state.
+**Tech choices:** The Backend will be implemented with Django framework. This choice was made primary because it's a Python framework and this means consistency between the Agent and the Backend language. It's batteries included so we get powerful admin panel, authentication and authorization system with almost no code. It's also have probably the greatest ORM allowing seamlessly usage of multiple database technologies at the same time. And finally, almost everything we need for extra features is already provided by community packages.
+
+- `Django`: Main framework.
+
+  - `DRF` _(Django REST Framework)_: RESTful APIs.
+
+- `PostgreSQL`: Strict ACID Database.
+
+  **Extra Features**:
+
+  - `Django All-Auth`: Advanced Authorization system with OAuth, SSO, Multi-Factor Authentication, etc.
+  - `Time-Scale` or `ScyllaDB`: If the user base become very large the PostgreSQL could lead to performance bottleneck for real-time log watchers. If that time ever come we can migrate to Time-Scale or partially migrate the tables for service state to a secondary write-optimized database like ScyllaDB.
 
 ---
 
@@ -225,7 +242,7 @@ _Decision pending. Potential options include native packages (`.deb`, `.rpm`) an
 
 ---
 
-# 4. Data Flow (MVP)
+# 5. Data Flow (MVP)
 
 1.  **On-Host Execution:** A user runs `ssi add <script_file>` on a monitored server. The Agent's CLI validates the script and generates corresponding `systemd` `.service` and `.timer` units. `systemd` then executes the script according to its defined schedule.
 2.  **Local Logging:** The script's output (e.g., `TIMESTAMP, STATUS, MESSAGE`) is redirected and appended to a dedicated log file at `/var/log/ssi/<service_name>.log`. This file serves as the single source of truth for that service's history on the host.
@@ -237,7 +254,7 @@ _Decision pending. Potential options include native packages (`.deb`, `.rpm`) an
 
 ---
 
-# 5. API Sketch (examples)
+# 6. API Sketch (examples)
 
 This sketch outlines the primary communication patterns for the Agent (using WebSockets) and the Client (using a REST API).
 
@@ -313,7 +330,7 @@ GET /api/v1/servers/:server_id/services
 
 ---
 
-# 6. Authentication & Security
+# 7. Authentication & Security
 
 The system employs a multi-layered security model to protect user data and ensure the integrity of status reporting.
 
@@ -345,7 +362,7 @@ This process ensures that only authorized users can provision new agents, and ea
 
 ---
 
-# 7. Storage Model (MVP)
+# 8. Storage Model (MVP)
 
 **Core tables (examples):**
 
@@ -358,7 +375,7 @@ For initial MVP, keep only recent history (e.g., last 7 days) and drop older raw
 
 ---
 
-# 8. Scalability & Reliability (concise)
+# 9. Scalability & Reliability (concise)
 
 - Backend should be stateless where possible so it can be horizontally scaled.
 - Use a message queue (RabbitMQ / Redis Streams / Kafka) for ingestion if Agents scale to many hosts.
@@ -367,14 +384,14 @@ For initial MVP, keep only recent history (e.g., last 7 days) and drop older raw
 
 ---
 
-# 9. Observability & Monitoring of the Monitoring System
+# 10. Observability & Monitoring of the Monitoring System
 
 - Expose internal metrics from Backend (requests/sec, errors, queue length) and from Agents (send success rate).
 - Self-monitoring alerts: e.g., if Backend ingestion latency spikes, notify maintainers.
 
 ---
 
-# 10. Deployment & CI/CD
+# 11. Deployment & CI/CD
 
 - Use GitHub Actions (or similar) to run linters, tests, and build/publish artifacts.
 - Backend: containerized (Docker) + Helm chart or simple Docker Compose for early stages.
@@ -382,7 +399,7 @@ For initial MVP, keep only recent history (e.g., last 7 days) and drop older raw
 
 ---
 
-# 11. Repo Layout (recommended hybrid meta-repo + sub-repos)
+# 12. Repo Layout (recommended hybrid meta-repo + sub-repos)
 
 **Umbrella repo**: `service-status-indicator/` (docs, diagrams, links to sub-repos)
 
@@ -406,7 +423,7 @@ Each sub-repo contains its own `README.md`, CONTRIBUTING, and CI config.
 
 ---
 
-# 12. ADRs & Decision Log
+# 13. ADRs & Decision Log
 
 Keep an `adr/` folder in the umbrella repo. Each Architecture Decision Record (ADR) documents a significant choice:
 
@@ -419,37 +436,17 @@ ADRs should include **context**, **decision**, and **consequences**.
 
 ---
 
-# 13. Roadmap (initial milestones)
-
-1. Draft blueprint & diagrams (this doc)
-2. Implement minimal Backend skeleton with user auth and agent registration
-3. Implement simple Agent that can register and send heartbeats
-4. Implement Web Client showing server list and last-seen times
-5. Add secure distribution (agent packaging) and CI pipelines
-6. Add basic alerting & longer-term metrics storage
-
----
-
 # 14. Glossary
 
 - **Agent**: software running on a monitored host, sends data to Backend.
-- **Client**: user-facing dashboard/UI.
-- **Backend**: central server/API and storage.
+- **Client**: Any implementation of the user-facing dashboard/UI.
+- **Backend**: The central server/API and storage.
+- **Service-scripts**: User-provided Bash scripts that encapsulate monitoring logic, following SSI conventions (metadata like name, description, version, schedule, timeout). They produce standardized status outputs (OK, UPDATE, WARNING, FAILURE) and are executed by the Agent using systemd services and timers.
 - **Claim token**: a one-time token used to bootstrap/claim an Agent for a user account.
-
----
-
-# 15. Next steps (actionable)
-
-- Create the umbrella GitHub repo and push this blueprint.md into `docs/`.
-- Create empty sub-repos (agent, backend, client-web) and link them from the umbrella README.
-- Create an Excalidraw architecture file and export an image to `diagrams/`.
-- Start an ADR: pick the first decision (agent language).
 
 ---
 
 # 16. Notes and open questions
 
-- How should the Agent initial claim flow work? (Claim token vs. email/code)
-- What metrics are essential for MVP? (CPU, memory, disk, uptime, service status)
-- Do you want push (Agent→Backend) only, or also allow Backend→Agent commands?)
+- How should the Agent authentication flow work? (Claim token vs. email/code, User created API key)
+- What checkers are essential for MVP? ("First-party" services-scripts for checking CPU, memory, disk overloads, uptime, systemd status, system updates, backup status, etc.)
