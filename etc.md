@@ -1,4 +1,0 @@
-- Create the umbrella GitHub repo and push this blueprint.md into `docs/`.
-- Create empty sub-repos (agent, backend, client-web) and link them from the umbrella README.
-- Create an Excalidraw architecture file and export an image to `diagrams/`.
-- Start an ADR: pick the first decision (agent language).
